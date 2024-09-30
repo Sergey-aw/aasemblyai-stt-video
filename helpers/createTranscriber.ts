@@ -13,13 +13,16 @@ export async function createTranscriber(
     console.error('No token found');
     return;
   }
+
   const transcriber = new RealtimeTranscriber({
     sampleRate: 16_000,
     token: token,
     wordBoost: ['Llama'],
     endUtteranceSilenceThreshold: 1000,
-    //   encoding: 'pcm_mulaw',
+    // encoding: 'pcm_mulaw', // Uncomment if needed
   });
+
+  let combinedText = ''; // Used to accumulate text from partial transcripts
 
   transcriber.on('open', ({ sessionId }) => {
     console.log(`Transcriber opened with session ID: ${sessionId}`);
@@ -27,46 +30,39 @@ export async function createTranscriber(
 
   transcriber.on('error', (error: Error) => {
     console.error('Transcriber error:', error);
-    // TODO: close transcriber
-    // await transcriber.close();
+    // Consider handling closure here for better error management
   });
 
   transcriber.on('close', (code: number, reason: string) => {
     console.log(`Transcriber closed with code ${code} and reason: ${reason}`);
-    // TODO: clean up
-    // transcriber = null;
+    // Clean-up logic can be placed here
   });
 
-  const texts: any = {};
   transcriber.on('transcript', (transcript: RealtimeTranscript) => {
     if (!transcript.text) {
-      //   console.error('Transcript is empty');
-      return;
+      return; // Skip empty transcripts
     }
 
-    // Detect if we're asking something for the LLM
-    setLlamaActive(transcript.text.toLowerCase().indexOf('llama') > 0);
+    // Detect "llama" in the transcript to toggle LLM active state
+    setLlamaActive(transcript.text.toLowerCase().includes('llama'));
 
     if (transcript.message_type === 'PartialTranscript') {
-      // console.log('[Transcript] Partial:', transcript.text);
-      let msg = '';
-      texts[transcript.audio_start] = transcript.text;
-      const keys = Object.keys(texts);
-      // keys.sort((a, b) => a - b);
-      for (const key of keys) {
-        if (texts[key]) {
-          msg += ` ${texts[key]}`;
-        }
-      }
-      console.log('[Transcript] Msg: ', msg);
-      setTranscribedText(transcript.text);
+      combinedText += transcript.text + ' '; // Concatenate with a space for readability
+      console.log('[Transcript] Partial:', combinedText); // Optionally, log the partial combined text
     } else {
-      console.log('[Transcript] Final:', transcript.text);
-      setTranscribedText(transcript.text);
-      if (transcript.text.toLowerCase().indexOf('llama') > 0) {
-        console.log('Setting prompt to: ', transcript.text);
-        processPrompt(transcript.text);
+      // For final transcripts, we combine any remaining partial transcript.
+      combinedText += transcript.text + ' ';
+      console.log('[Transcript] Final:', combinedText); // Log the final combined text
+
+      setTranscribedText(combinedText); // Update state with the final combined text
+
+      // If "llama" is mentioned, process the combined text as a prompt
+      if (combinedText.toLowerCase().includes('llama')) {
+        console.log('Processing prompt:', combinedText);
+        processPrompt(combinedText);
       }
+
+      combinedText = ''; // Reset combined text for the next series of transcripts
     }
   });
 
